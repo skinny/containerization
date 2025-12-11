@@ -55,8 +55,26 @@ public struct KeychainHelper: Sendable {
 
     /// Save authorization data for a given domain to the keychain.
     public func save(domain: String, username: String, password: String) throws {
+        try save(domain: domain, username: username, password: password, trustedApplicationPaths: nil)
+    }
+
+    /// Save authorization data for a given domain to the keychain with optional trusted application paths.
+    /// When `trustedApplicationPaths` is provided, the specified applications will be able to access
+    /// the credentials without prompting the user.
+    public func save(
+        domain: String,
+        username: String,
+        password: String,
+        trustedApplicationPaths: [String]?
+    ) throws {
         let kq = KeychainQuery()
-        try kq.save(id: self.id, host: domain, user: username, token: password)
+        try kq.save(
+            id: self.id,
+            host: domain,
+            user: username,
+            token: password,
+            trustedApplicationPaths: trustedApplicationPaths
+        )
     }
 
     /// Prompt for authorization data for a given domain to be saved to the keychain.

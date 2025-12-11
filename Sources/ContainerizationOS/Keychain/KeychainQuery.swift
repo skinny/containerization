@@ -31,6 +31,19 @@ public struct KeychainQuery {
 
     /// Save a value to the keychain.
     public func save(id: String, host: String, user: String, token: String) throws {
+        try save(id: id, host: host, user: user, token: token, trustedApplicationPaths: nil)
+    }
+
+    /// Save a value to the keychain with optional trusted application paths.
+    /// When `trustedApplicationPaths` is provided, an access control list is created
+    /// that allows the specified applications to access the keychain item without prompting.
+    public func save(
+        id: String,
+        host: String,
+        user: String,
+        token: String,
+        trustedApplicationPaths: [String]?
+    ) throws {
         if try exists(id: id, host: host) {
             try delete(id: id, host: host)
         }
@@ -38,7 +51,8 @@ public struct KeychainQuery {
         guard let tokenEncoded = token.data(using: String.Encoding.utf8) else {
             throw Self.Error.invalidTokenConversion
         }
-        let query: [String: Any] = [
+
+        var query: [String: Any] = [
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrSecurityDomain as String: id,
             kSecAttrServer as String: host,
@@ -47,6 +61,41 @@ public struct KeychainQuery {
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
             kSecAttrSynchronizable as String: false,
         ]
+
+        // Always create ACL with at least the calling application
+        var trustedApps: [SecTrustedApplication] = []
+
+        // Add the calling application (self) - always included
+        var selfApp: SecTrustedApplication?
+        let selfStatus = SecTrustedApplicationCreateFromPath(nil, &selfApp)
+        if selfStatus == errSecSuccess, let app = selfApp {
+            trustedApps.append(app)
+        }
+
+        // Add specified trusted application paths if provided
+        if let paths = trustedApplicationPaths {
+            for path in paths {
+                var trustedApp: SecTrustedApplication?
+                let status = SecTrustedApplicationCreateFromPath(path, &trustedApp)
+                if status == errSecSuccess, let app = trustedApp {
+                    trustedApps.append(app)
+                }
+            }
+        }
+
+        // Create access control with trusted apps (always has at least self)
+        if !trustedApps.isEmpty {
+            var access: SecAccess?
+            let accessStatus = SecAccessCreate(
+                "Registry credentials for \(host)" as CFString,
+                trustedApps as CFArray,
+                &access
+            )
+            if accessStatus == errSecSuccess, let acc = access {
+                query[kSecAttrAccess as String] = acc
+            }
+        }
+
         let status = SecItemAdd(query as CFDictionary, nil)
         guard status == errSecSuccess else { throw Self.Error.unhandledError(status: status) }
     }
